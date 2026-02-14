@@ -1,5 +1,5 @@
 /**
- * @3speak/player-sdk
+ * @mantequilla-soft/3speak-player
  *
  * Framework-agnostic HLS video player for 3Speak.
  *
@@ -10,7 +10,7 @@
  *   detectPlatform — iOS/Safari/HLS capability detection
  *
  * React:
- *   import { usePlayer, usePlayerPool } from '@3speak/player-sdk/react';
+ *   import { usePlayer, usePlayerPool } from '@mantequilla-soft/3speak-player/react';
  */
 
 // Core player
@@ -22,8 +22,8 @@ export { PlayerPool } from './core/pool';
 // API client
 export { ThreeSpeakApi, metadataToSource } from './core/api';
 
-// Platform detection
-export { detectPlatform } from './core/platform';
+// Platform detection & autoplay probe
+export { detectPlatform, canAutoplay } from './core/platform';
 
 // Types
 export type {
@@ -33,6 +33,7 @@ export type {
   PlayerState,
   PlayerEvents,
   PlatformInfo,
+  QualityLevel,
   EventHandler,
   EventUnsubscribe,
 } from './types';

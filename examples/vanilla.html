@@ -62,7 +62,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>@3speak/player-sdk — Vanilla JS</h1>
+    <h1>@mantequilla-soft/3speak-player — Vanilla JS</h1>
 
     <input type="text" id="videoRef" placeholder="author/permlink" value="" />
 
@@ -85,11 +85,11 @@
     <div class="status" id="status">Ready. Enter a 3speak author/permlink and click Load.</div>
   </div>
 
-  <!-- Import from the SDK (in production: import from '@3speak/player-sdk') -->
+  <!-- Import from the SDK (in production: import from '@mantequilla-soft/3speak-player') -->
   <script type="module">
     // For local dev, adjust path:
     // import { Player, detectPlatform } from '../dist/index.js';
-    import { Player, detectPlatform } from '@3speak/player-sdk';
+    import { Player, detectPlatform } from '@mantequilla-soft/3speak-player';
 
     const platform = detectPlatform();
     const status = document.getElementById('status');

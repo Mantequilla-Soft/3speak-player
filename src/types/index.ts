@@ -37,6 +37,22 @@ export interface PlayerState {
   isVertical: boolean | null;
   videoWidth: number;
   videoHeight: number;
+  /** Buffered progress (0-1) */
+  buffered: number;
+  /** Picture-in-Picture active */
+  pip: boolean;
+  /** Fullscreen active */
+  fullscreen: boolean;
+  /** Audio-only mode active */
+  audioOnly: boolean;
+}
+
+/** HLS quality level (hls.js only) */
+export interface QualityLevel {
+  index: number;
+  height: number;
+  width: number;
+  bitrate: number;
 }
 
 /** Events emitted by the player */
@@ -53,6 +69,18 @@ export interface PlayerEvents {
   resize: (info: { width: number; height: number; isVertical: boolean }) => void;
   /** Loading state changed */
   loading: (isLoading: boolean) => void;
+  /** Buffered progress changed (0-1) */
+  buffered: (progress: number) => void;
+  /** Picture-in-Picture state changed */
+  pip: (active: boolean) => void;
+  /** Fullscreen state changed */
+  fullscreen: (active: boolean) => void;
+  /** Quality level changed (hls.js only) */
+  qualitychange: (level: QualityLevel) => void;
+  /** Video element visibility changed (IntersectionObserver) */
+  visibility: (visible: boolean) => void;
+  /** Playback resumed from saved position */
+  resume: (info: { time: number; ref: string }) => void;
 }
 
 /** Configuration for creating a player instance */
@@ -69,6 +97,12 @@ export interface PlayerConfig {
   poster?: boolean;
   /** hls.js configuration overrides */
   hlsConfig?: Record<string, unknown>;
+  /** Start in audio-only mode */
+  audioOnly?: boolean;
+  /** Auto-pause when video scrolls out of viewport (IntersectionObserver) */
+  autopause?: boolean;
+  /** Resume playback from last position (uses localStorage) */
+  resume?: boolean;
 }
 
 /** Platform detection results */

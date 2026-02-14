@@ -1,9 +1,9 @@
 /**
- * React adapter for @3speak/player-sdk
+ * React adapter for @mantequilla-soft/3speak-player
  *
  * @example
  * ```tsx
- * import { usePlayer } from '@3speak/player-sdk/react';
+ * import { usePlayer } from '@mantequilla-soft/3speak-player/react';
  *
  * function VideoPlayer({ author, permlink }) {
  *   const { ref, state, play, pause, togglePlay, setMuted } = usePlayer({
@@ -54,6 +54,14 @@ export interface UsePlayerReturn {
   setMuted: (muted: boolean) => void;
   setVolume: (volume: number) => void;
   setLoop: (loop: boolean) => void;
+  togglePip: () => Promise<void>;
+  toggleFullscreen: () => Promise<void>;
+  setQuality: (index: number) => void;
+  getQualities: () => import('./types').QualityLevel[];
+  setAudioOnly: (enabled: boolean) => void;
+  enableAutopause: () => void;
+  disableAutopause: () => void;
+  clearResumePosition: (ref?: string) => void;
 }
 
 const EMPTY_STATE: PlayerState = {
@@ -67,6 +75,10 @@ const EMPTY_STATE: PlayerState = {
   isVertical: null,
   videoWidth: 0,
   videoHeight: 0,
+  buffered: 0,
+  pip: false,
+  fullscreen: false,
+  audioOnly: false,
 };
 
 /**
@@ -167,6 +179,14 @@ export function usePlayer(options: UsePlayerOptions = {}): UsePlayerReturn {
     setMuted: useCallback((muted: boolean) => player.setMuted(muted), [player]),
     setVolume: useCallback((volume: number) => player.setVolume(volume), [player]),
     setLoop: useCallback((loop: boolean) => player.setLoop(loop), [player]),
+    togglePip: useCallback(() => player.togglePip(), [player]),
+    toggleFullscreen: useCallback(() => player.toggleFullscreen(), [player]),
+    setQuality: useCallback((index: number) => player.setQuality(index), [player]),
+    getQualities: useCallback(() => player.getQualities(), [player]),
+    setAudioOnly: useCallback((enabled: boolean) => player.setAudioOnly(enabled), [player]),
+    enableAutopause: useCallback(() => player.enableAutopause(), [player]),
+    disableAutopause: useCallback(() => player.disableAutopause(), [player]),
+    clearResumePosition: useCallback((ref?: string) => player.clearResumePosition(ref), [player]),
   };
 }
 

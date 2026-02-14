@@ -1,4 +1,4 @@
-# @3speak/player-sdk
+# @mantequilla-soft/3speak-player
 
 Framework-agnostic HLS video player SDK for [3Speak](https://3speak.tv). Works with vanilla JavaScript, React, Vue, Svelte, or any framework.
 
@@ -15,7 +15,7 @@ Eliminates iframes entirely — plays 3Speak videos using native `<video>` eleme
 ## Install
 
 ```bash
-npm install @3speak/player-sdk
+npm install @mantequilla-soft/3speak-player
 ```
 
 ## Quick Start
@@ -26,7 +26,7 @@ npm install @3speak/player-sdk
 <video id="player" playsinline></video>
 
 <script type="module">
-  import { Player } from '@3speak/player-sdk';
+  import { Player } from '@mantequilla-soft/3speak-player';
 
   const player = new Player({ muted: true, loop: true });
   player.attach(document.getElementById('player'));
@@ -46,7 +46,7 @@ npm install @3speak/player-sdk
 ### React
 
 ```tsx
-import { usePlayer } from '@3speak/player-sdk/react';
+import { usePlayer } from '@mantequilla-soft/3speak-player/react';
 
 function VideoPlayer({ author, permlink }) {
   const { ref, state, togglePlay, setMuted } = usePlayer({
@@ -78,7 +78,7 @@ function VideoPlayer({ author, permlink }) {
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { Player } from '@3speak/player-sdk';
+import { Player } from '@mantequilla-soft/3speak-player';
 
 const videoEl = ref(null);
 let player;
@@ -99,7 +99,7 @@ onUnmounted(() => player?.destroy());
 ```svelte
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { Player } from '@3speak/player-sdk';
+  import { Player } from '@mantequilla-soft/3speak-player';
 
   let videoEl;
   let player;
@@ -135,6 +135,8 @@ const player = new Player(config?: PlayerConfig);
 | `muted` | `boolean` | `true` | Start muted (needed for autoplay) |
 | `loop` | `boolean` | `false` | Loop playback |
 | `hlsConfig` | `object` | `{}` | hls.js config overrides |
+| `autopause` | `boolean` | `false` | Auto-pause when scrolled out of viewport |
+| `resume` | `boolean` | `false` | Resume playback from last position (localStorage) |
 
 **Methods:**
 ```ts
@@ -149,6 +151,16 @@ player.setMuted(boolean)             // Set mute state
 player.setVolume(0-1)                // Set volume
 player.setLoop(boolean)              // Set loop mode
 player.setPlaybackRate(rate)         // Set speed (0.5, 1, 2, etc.)
+player.togglePip()                   // Toggle Picture-in-Picture
+player.toggleFullscreen()            // Toggle fullscreen
+player.getQualities()                // Get available quality levels (hls.js only)
+player.setQuality(index)             // Set quality (-1 for auto, hls.js only)
+player.getCurrentQuality()           // Get current quality index
+player.setAudioOnly(boolean)         // Audio-only mode (hides video)
+player.getThumbnailAt(time)          // Get thumbnail URL at time (stub)
+player.enableAutopause()             // Enable auto-pause on scroll out
+player.disableAutopause()            // Disable auto-pause
+player.clearResumePosition(ref?)     // Clear saved resume position
 player.getState()                    // Get current PlayerState
 player.detach()                      // Detach from element
 player.destroy()                     // Destroy and release resources
@@ -165,6 +177,12 @@ player.on('error', ({ message, fatal }) => {})
 player.on('fallback', ({ url, index }) => {})
 player.on('loading', (isLoading) => {})
 player.on('resize', ({ width, height, isVertical }) => {})
+player.on('buffered', (progress) => {})
+player.on('pip', (active) => {})
+player.on('fullscreen', (active) => {})
+player.on('qualitychange', ({ index, height, width, bitrate }) => {})
+player.on('visibility', (visible) => {})
+player.on('resume', ({ time, ref }) => {})
 ```
 
 ### `PlayerPool`
@@ -195,7 +213,7 @@ pool.destroy()                        // Destroy everything
 Direct API access.
 
 ```ts
-import { ThreeSpeakApi } from '@3speak/player-sdk';
+import { ThreeSpeakApi } from '@mantequilla-soft/3speak-player';
 
 const api = new ThreeSpeakApi('https://play.3speak.tv');
 const meta = await api.fetchVideoMetadata('author', 'permlink');
@@ -207,16 +225,30 @@ await api.recordView('author', 'permlink');
 ### `detectPlatform()`
 
 ```ts
-import { detectPlatform } from '@3speak/player-sdk';
+import { detectPlatform } from '@mantequilla-soft/3speak-player';
 
 const platform = detectPlatform();
 // { isIOS, isSafari, supportsNativeHLS, supportsMSE, supportsHlsJs }
 ```
 
+### `canAutoplay()`
+
+```ts
+import { canAutoplay } from '@mantequilla-soft/3speak-player';
+
+// Test muted autoplay (default)
+const canMuted = await canAutoplay();
+
+// Test unmuted autoplay
+const canUnmuted = await canAutoplay(false);
+```
+
+Results are cached — safe to call multiple times.
+
 ### React Hooks
 
 ```ts
-import { usePlayer, usePlayerPool } from '@3speak/player-sdk/react';
+import { usePlayer, usePlayerPool } from '@mantequilla-soft/3speak-player/react';
 ```
 
 **`usePlayer(options)`** — Single player hook (see Quick Start above)
@@ -243,7 +275,7 @@ function ShortsFeed({ videos }) {
 │                Your App                      │
 │  (React / Vue / Svelte / Vanilla JS)         │
 ├─────────────────────────────────────────────┤
-│            @3speak/player-sdk                │
+│            @mantequilla-soft/3speak-player                │
 │  ┌──────────┐  ┌───────────┐  ┌──────────┐ │
 │  │  Player   │  │ PlayerPool│  │   API    │ │
 │  └─────┬────┘  └─────┬─────┘  └────┬─────┘ │

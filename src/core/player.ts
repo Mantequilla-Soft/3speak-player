@@ -8,6 +8,7 @@ import type {
   PlayerEvents,
   EventHandler,
   EventUnsubscribe,
+  QualityLevel,
 } from '../types';
 
 const DEFAULT_CONFIG: Required<PlayerConfig> = {
@@ -17,6 +18,9 @@ const DEFAULT_CONFIG: Required<PlayerConfig> = {
   loop: false,
   poster: true,
   hlsConfig: {},
+  audioOnly: false,
+  autopause: false,
+  resume: false,
 };
 
 /**
@@ -27,7 +31,7 @@ const DEFAULT_CONFIG: Required<PlayerConfig> = {
  *
  * @example
  * ```js
- * import { Player } from '@3speak/player-sdk';
+ * import { Player } from '@mantequilla-soft/3speak-player';
  *
  * const player = new Player({ muted: true, loop: true });
  * player.attach(document.querySelector('video'));
@@ -46,11 +50,16 @@ export class Player {
   private fallbacks: string[] = [];
   private _ready = false;
   private _destroyed = false;
+  private _audioOnly = false;
+  private _currentRef: string | null = null;
+  private _resumeSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private _observer: IntersectionObserver | null = null;
   private cleanupFns: (() => void)[] = [];
 
   constructor(config?: PlayerConfig) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.api = new ThreeSpeakApi(this.config.apiBase, this.config.debug);
+    this._audioOnly = this.config.audioOnly;
   }
 
   private log(...args: unknown[]) {
@@ -118,6 +127,11 @@ export class Player {
     // Bind events
     this.bindVideoEvents(element);
 
+    // Auto-pause on scroll out
+    if (this.config.autopause) {
+      this.setupAutopause(element);
+    }
+
     this.log('Attached to video element');
     return this;
   }
@@ -134,6 +148,12 @@ export class Player {
       this.video.pause();
       this.video.removeAttribute('src');
       this.video.load();
+    }
+
+    this.destroyAutopause();
+    if (this._resumeSaveTimer) {
+      clearTimeout(this._resumeSaveTimer);
+      this._resumeSaveTimer = null;
     }
 
     this.video = null;
@@ -162,10 +182,12 @@ export class Player {
       const [author, permlink] = clean.split('/');
       if (!author || !permlink) throw new Error(`Invalid video ref: "${refOrSource}". Use "author/permlink".`);
 
+      this._currentRef = clean;
       this.log('Loading from API:', author, permlink);
       this.emit('loading', true as any);
       source = await this.api.fetchSource(author, permlink);
     } else {
+      this._currentRef = null;
       source = refOrSource;
     }
 
@@ -228,11 +250,104 @@ export class Player {
     if (this.video) this.video.playbackRate = rate;
   }
 
+  /** Toggle Picture-in-Picture mode */
+  async togglePip(): Promise<void> {
+    if (!this.video) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (this.video.requestPictureInPicture) {
+        await this.video.requestPictureInPicture();
+      }
+    } catch (e) {
+      this.log('PiP toggle failed:', e);
+    }
+  }
+
+  /** Toggle fullscreen mode */
+  async toggleFullscreen(): Promise<void> {
+    if (!this.video) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await this.video.requestFullscreen();
+      }
+    } catch (e) {
+      this.log('Fullscreen toggle failed:', e);
+    }
+  }
+
+  /** Get available quality levels (hls.js only, empty for native HLS) */
+  getQualities(): QualityLevel[] {
+    if (!this.hls) return [];
+    return this.hls.levels.map((level, index) => ({
+      index,
+      height: level.height,
+      width: level.width,
+      bitrate: level.bitrate,
+    }));
+  }
+
+  /** Set quality level (-1 for auto, hls.js only) */
+  setQuality(index: number): void {
+    if (this.hls) this.hls.currentLevel = index;
+  }
+
+  /** Get current quality level index (-1 = auto, hls.js only) */
+  getCurrentQuality(): number {
+    return this.hls?.currentLevel ?? -1;
+  }
+
+  /**
+   * Get thumbnail at a given time. Currently returns the poster image.
+   * Reserved for future sprite sheet support.
+   */
+  getThumbnailAt(_time: number): string | null {
+    return this.video?.poster || null;
+  }
+
+  /** Set audio-only mode (hides video, keeps audio playing) */
+  setAudioOnly(enabled: boolean): void {
+    this._audioOnly = enabled;
+    if (this.video) {
+      this.video.style.visibility = enabled ? 'hidden' : '';
+    }
+    this.log('Audio-only:', enabled);
+  }
+
+  /** Enable auto-pause when video scrolls out of viewport */
+  enableAutopause(): void {
+    this.config.autopause = true;
+    if (this.video && !this._observer) {
+      this.setupAutopause(this.video);
+    }
+  }
+
+  /** Disable auto-pause on scroll out */
+  disableAutopause(): void {
+    this.config.autopause = false;
+    this.destroyAutopause();
+  }
+
+  /** Clear saved resume position for a video ref. Clears current video if no ref given. */
+  clearResumePosition(ref?: string): void {
+    const key = ref || this._currentRef;
+    if (key) {
+      try { localStorage.removeItem(`3speak_pos_${key}`); } catch {}
+      this.log('Cleared resume position for', key);
+    }
+  }
+
   // ─── State ───
 
   /** Get current player state snapshot */
   getState(): PlayerState {
     const v = this.video;
+    let buffered = 0;
+    if (v && v.buffered.length > 0 && v.duration > 0) {
+      buffered = v.buffered.end(v.buffered.length - 1) / v.duration;
+    }
     return {
       currentTime: v?.currentTime || 0,
       duration: v?.duration || 0,
@@ -244,6 +359,10 @@ export class Player {
       isVertical: v ? (v.videoHeight > v.videoWidth ? true : v.videoWidth > 0 ? false : null) : null,
       videoWidth: v?.videoWidth || 0,
       videoHeight: v?.videoHeight || 0,
+      buffered,
+      pip: !!document.pictureInPictureElement && document.pictureInPictureElement === v,
+      fullscreen: !!document.fullscreenElement && document.fullscreenElement === v,
+      audioOnly: this._audioOnly,
     };
   }
 
@@ -310,6 +429,18 @@ export class Player {
       hls.loadSource(hlsUrl);
       hls.attachMedia(this.video);
 
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+        const level = hls.levels[data.level];
+        if (level) {
+          this.emit('qualitychange', {
+            index: data.level,
+            height: level.height,
+            width: level.width,
+            bitrate: level.bitrate,
+          });
+        }
+      });
+
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
           this.log('Fatal HLS error:', data.type, data.details);
@@ -366,6 +497,54 @@ export class Player {
     }
   }
 
+  private setupAutopause(element: HTMLVideoElement): void {
+    if (typeof IntersectionObserver === 'undefined') return;
+    this.destroyAutopause();
+    this._observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        const visible = entry.isIntersecting;
+        this.emit('visibility', visible);
+        if (!visible && !this.video?.paused) {
+          this.pause();
+          this.log('Auto-paused (scrolled out of view)');
+        }
+      },
+      { threshold: 0.25 },
+    );
+    this._observer.observe(element);
+  }
+
+  private destroyAutopause(): void {
+    if (this._observer) {
+      this._observer.disconnect();
+      this._observer = null;
+    }
+  }
+
+  private saveResumePosition(): void {
+    if (!this.config.resume || !this._currentRef || !this.video) return;
+    const time = this.video.currentTime;
+    if (time < 1) return; // Don't save near the start
+    try { localStorage.setItem(`3speak_pos_${this._currentRef}`, String(time)); } catch {}
+  }
+
+  private restoreResumePosition(): void {
+    if (!this.config.resume || !this._currentRef || !this.video) return;
+    try {
+      const saved = localStorage.getItem(`3speak_pos_${this._currentRef}`);
+      if (!saved) return;
+      const time = parseFloat(saved);
+      if (isNaN(time) || time < 1) return;
+      // Skip if near the end (within 3s)
+      const duration = this.video.duration;
+      if (duration && time > duration - 3) return;
+      this.video.currentTime = time;
+      this.emit('resume', { time, ref: this._currentRef });
+      this.log('Resumed at', time.toFixed(1) + 's');
+    } catch {}
+  }
+
   private bindVideoEvents(video: HTMLVideoElement): void {
     const on = <K extends keyof HTMLVideoElementEventMap>(
       event: K,
@@ -382,6 +561,7 @@ export class Player {
       if (w && h) {
         this._ready = true;
         const isVertical = h > w;
+        this.restoreResumePosition();
         this.emit('ready', { isVertical, width: w, height: h });
         this.emit('resize', { isVertical, width: w, height: h });
         this.emit('loading', false as any);
@@ -406,6 +586,13 @@ export class Player {
         duration: video.duration || 0,
         paused: video.paused,
       });
+      // Throttle-save resume position (every 3s)
+      if (this.config.resume && this._currentRef && !this._resumeSaveTimer) {
+        this._resumeSaveTimer = setTimeout(() => {
+          this._resumeSaveTimer = null;
+          this.saveResumePosition();
+        }, 3000);
+      }
     });
 
     on('play', () => this.emit('play'));
@@ -414,6 +601,21 @@ export class Player {
 
     on('waiting', () => this.emit('loading', true as any));
     on('canplay', () => { if (this._ready) this.emit('loading', false as any); });
+
+    on('progress', () => {
+      if (video.buffered.length > 0 && video.duration > 0) {
+        this.emit('buffered', video.buffered.end(video.buffered.length - 1) / video.duration);
+      }
+    });
+
+    on('enterpictureinpicture' as any, () => this.emit('pip', true));
+    on('leavepictureinpicture' as any, () => this.emit('pip', false));
+
+    const onFullscreenChange = () => {
+      this.emit('fullscreen', document.fullscreenElement === video);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    this.cleanupFns.push(() => document.removeEventListener('fullscreenchange', onFullscreenChange));
 
     // Native fallback on error (iOS / non-hls.js)
     on('error', () => {
