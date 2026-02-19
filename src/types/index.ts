@@ -45,6 +45,8 @@ export interface PlayerState {
   fullscreen: boolean;
   /** Audio-only mode active */
   audioOnly: boolean;
+  /** Current playback rate (1 = normal) */
+  playbackRate: number;
 }
 
 /** HLS quality level (hls.js only) */
@@ -79,6 +81,8 @@ export interface PlayerEvents {
   qualitychange: (level: QualityLevel) => void;
   /** Video element visibility changed (IntersectionObserver) */
   visibility: (visible: boolean) => void;
+  /** Playback rate changed */
+  ratechange: (rate: number) => void;
   /** Playback resumed from saved position */
   resume: (info: { time: number; ref: string }) => void;
 }

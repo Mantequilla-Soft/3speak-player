@@ -291,7 +291,11 @@ export class Player {
 
   /** Set quality level (-1 for auto, hls.js only) */
   setQuality(index: number): void {
-    if (this.hls) this.hls.currentLevel = index;
+    if (!this.hls) return;
+    this.log('setQuality:', index);
+    this.hls.currentLevel = index;
+    // Also set nextLevel so the switch persists across segment boundaries
+    this.hls.nextLevel = index;
   }
 
   /** Get current quality level index (-1 = auto, hls.js only) */
@@ -363,6 +367,7 @@ export class Player {
       pip: !!document.pictureInPictureElement && document.pictureInPictureElement === v,
       fullscreen: !!document.fullscreenElement && document.fullscreenElement === v,
       audioOnly: this._audioOnly,
+      playbackRate: v?.playbackRate ?? 1,
     };
   }
 
@@ -429,15 +434,23 @@ export class Player {
       hls.loadSource(hlsUrl);
       hls.attachMedia(this.video);
 
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+      hls.on(Hls.Events.LEVEL_SWITCHING, (_event, data) => {
         const level = hls.levels[data.level];
         if (level) {
+          this.log('Quality switching to:', data.level, `${level.height}p`);
           this.emit('qualitychange', {
             index: data.level,
             height: level.height,
             width: level.width,
             bitrate: level.bitrate,
           });
+        }
+      });
+
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+        const level = hls.levels[data.level];
+        if (level) {
+          this.log('Quality switched to:', data.level, `${level.height}p`);
         }
       });
 
@@ -606,6 +619,10 @@ export class Player {
       if (video.buffered.length > 0 && video.duration > 0) {
         this.emit('buffered', video.buffered.end(video.buffered.length - 1) / video.duration);
       }
+    });
+
+    on('ratechange', () => {
+      this.emit('ratechange', video.playbackRate);
     });
 
     on('enterpictureinpicture' as any, () => this.emit('pip', true));

@@ -61,6 +61,7 @@ export interface UsePlayerReturn {
   setAudioOnly: (enabled: boolean) => void;
   enableAutopause: () => void;
   disableAutopause: () => void;
+  setPlaybackRate: (rate: number) => void;
   clearResumePosition: (ref?: string) => void;
 }
 
@@ -79,6 +80,7 @@ const EMPTY_STATE: PlayerState = {
   pip: false,
   fullscreen: false,
   audioOnly: false,
+  playbackRate: 1,
 };
 
 /**
@@ -144,6 +146,10 @@ export function usePlayer(options: UsePlayerOptions = {}): UsePlayerReturn {
       callbackRefs.current.onError?.(err);
     }));
 
+    unsubs.push(player.on('ratechange', (rate) => {
+      setState(s => ({ ...s, playbackRate: rate }));
+    }));
+
     return () => unsubs.forEach(fn => fn());
   }, [player, autoPlay]);
 
@@ -186,6 +192,7 @@ export function usePlayer(options: UsePlayerOptions = {}): UsePlayerReturn {
     setAudioOnly: useCallback((enabled: boolean) => player.setAudioOnly(enabled), [player]),
     enableAutopause: useCallback(() => player.enableAutopause(), [player]),
     disableAutopause: useCallback(() => player.disableAutopause(), [player]),
+    setPlaybackRate: useCallback((rate: number) => player.setPlaybackRate(rate), [player]),
     clearResumePosition: useCallback((ref?: string) => player.clearResumePosition(ref), [player]),
   };
 }

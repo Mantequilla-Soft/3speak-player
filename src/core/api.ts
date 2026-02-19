@@ -20,22 +20,41 @@ export class ThreeSpeakApi {
   }
 
   /**
-   * Fetch full video metadata from the embed API.
+   * Fetch full video metadata.
+   * Tries /api/embed (shorts/embed-video collection) first, then falls back
+   * to /api/watch (legacy videos collection) for regular long-form videos.
    * @param author - Hive account name
    * @param permlink - 3Speak video permlink
    */
   async fetchVideoMetadata(author: string, permlink: string): Promise<VideoMetadata> {
-    const url = `${this.apiBase}/api/embed?v=${author}/${permlink}`;
-    this.log('Fetching:', url);
+    // Try embed endpoint first (shorts / embed-video collection)
+    const embedUrl = `${this.apiBase}/api/embed?v=${author}/${permlink}`;
+    this.log('Fetching (embed):', embedUrl);
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-      throw new Error(error.error || `Failed to fetch video: HTTP ${response.status}`);
+    const embedResponse = await fetch(embedUrl);
+    if (embedResponse.ok) {
+      const data = await embedResponse.json();
+      if (!data.error) {
+        this.log('Got metadata (embed):', data.owner, data.permlink, data.status);
+        return data as VideoMetadata;
+      }
     }
 
-    const data = await response.json();
-    this.log('Got metadata:', data.owner, data.permlink, data.status);
+    // Fall back to watch endpoint (legacy videos collection)
+    const watchUrl = `${this.apiBase}/api/watch?v=${author}/${permlink}`;
+    this.log('Fetching (watch):', watchUrl);
+
+    const watchResponse = await fetch(watchUrl);
+    if (!watchResponse.ok) {
+      const error = await watchResponse.json().catch(() => ({ error: `HTTP ${watchResponse.status}` }));
+      throw new Error(error.error || `Failed to fetch video: HTTP ${watchResponse.status}`);
+    }
+
+    const data = await watchResponse.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    this.log('Got metadata (watch):', data.owner, data.permlink, data.status);
     return data as VideoMetadata;
   }
 
