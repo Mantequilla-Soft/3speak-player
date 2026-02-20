@@ -1,6 +1,6 @@
 {
   "name": "@mantequilla-soft/3speak-player",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "Framework-agnostic HLS video player SDK for 3Speak. Works with vanilla JS, React, Vue, Svelte, or any framework.",
   "keywords": [
     "3speak",

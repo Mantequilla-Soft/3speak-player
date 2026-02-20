@@ -23,11 +23,17 @@ export function detectPlatform(): PlatformInfo {
 
   const ua = navigator.userAgent;
 
-  const isIOS =
-    /iPad|iPhone|iPod/.test(ua) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // Detect actual browser engine via CSS property (immune to UA spoofing by
+  // Firefox responsive-design-mode or Chrome device-emulation which change the
+  // User-Agent to match the emulated device but can't play HLS natively).
+  const isFirefox = 'MozAppearance' in (document.documentElement?.style || {});
 
-  const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+  const isIOS = !isFirefox && (
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+
+  const isSafari = !isFirefox && /^((?!chrome|android).)*safari/i.test(ua);
 
   const testVideo = document.createElement('video');
   const supportsNativeHLS =
