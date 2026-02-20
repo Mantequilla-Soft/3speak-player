@@ -414,12 +414,10 @@ export class Player {
 
     const platform = this.platform;
 
-    if (platform.isIOS || (platform.isSafari && !platform.supportsHlsJs)) {
-      // iOS Safari / older Safari: native HLS
-      this.log('Using native HLS');
-      this.video.src = hlsUrl;
-    } else if (platform.supportsHlsJs) {
-      // Chrome, Firefox, Edge: use hls.js
+    if (platform.supportsHlsJs) {
+      // Prefer hls.js when MSE is available (Chrome, Firefox, Edge, modern Safari/iOS).
+      // This avoids relying on UA detection which can be spoofed by browser
+      // device-emulation tools (Firefox responsive-design-mode, Chrome DevTools).
       this.log('Using hls.js');
       const hls = new Hls({
         enableWorker: true,
@@ -476,7 +474,8 @@ export class Player {
 
       this.hls = hls;
     } else if (platform.supportsNativeHLS) {
-      // Fallback: native HLS on non-Safari (unlikely but safe)
+      // Fallback: native HLS (old iOS/Safari without MSE)
+      this.log('Using native HLS');
       this.video.src = hlsUrl;
     } else {
       this.emit('error', {
