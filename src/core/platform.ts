@@ -1,3 +1,4 @@
+import Hls from 'hls.js';
 import type { PlatformInfo } from '../types';
 
 let cached: PlatformInfo | null = null;
@@ -14,8 +15,10 @@ export function detectPlatform(): PlatformInfo {
     cached = {
       isIOS: false,
       isSafari: false,
+      isAppleWebKit: false,
       supportsNativeHLS: false,
       supportsMSE: false,
+      supportsManagedMSE: false,
       supportsHlsJs: false,
     };
     return cached;
@@ -43,12 +46,25 @@ export function detectPlatform(): PlatformInfo {
     typeof MediaSource !== 'undefined' &&
     typeof MediaSource.isTypeSupported === 'function';
 
+  // iPhone (iOS 17.1+) has no classic MediaSource, only Apple's
+  // ManagedMediaSource, which hls.js 1.5+ drives. Checking MediaSource alone
+  // left every iPhone on native HLS: no gateway fallback, no loader tuning,
+  // and a cold IPFS segment simply stalls. Hls.isSupported() knows both.
+  const supportsManagedMSE =
+    typeof (globalThis as any).ManagedMediaSource !== 'undefined';
+
+  // Apple WebKit (Safari on macOS, and every browser on iOS/iPadOS) enforces a
+  // strict SourceBuffer memory quota. See appleBufferCaps in player.ts.
+  const isAppleWebKit = isIOS || isSafari;
+
   cached = {
     isIOS,
     isSafari,
+    isAppleWebKit,
     supportsNativeHLS,
     supportsMSE,
-    supportsHlsJs: supportsMSE, // hls.js requires MSE
+    supportsManagedMSE,
+    supportsHlsJs: Hls.isSupported(),
   };
 
   return cached;

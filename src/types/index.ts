@@ -107,14 +107,25 @@ export interface PlayerConfig {
   autopause?: boolean;
   /** Resume playback from last position (uses localStorage) */
   resume?: boolean;
+  /**
+   * Seconds of stalled playback (waiting, not paused, no progress) before the
+   * player switches to the next fallback source, keeping the position.
+   * Applies as given to native HLS; hls.js, which retries by itself, waits at
+   * least 30s. 0 disables. Default: 12.
+   */
+  stallTimeout?: number;
 }
 
 /** Platform detection results */
 export interface PlatformInfo {
   isIOS: boolean;
   isSafari: boolean;
+  /** Safari on macOS, or any browser on iOS/iPadOS: strict buffer quotas. */
+  isAppleWebKit: boolean;
   supportsNativeHLS: boolean;
   supportsMSE: boolean;
+  /** Apple's ManagedMediaSource (iPhone on iOS 17.1+). */
+  supportsManagedMSE: boolean;
   supportsHlsJs: boolean;
 }
 
