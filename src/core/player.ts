@@ -21,13 +21,44 @@ const DEFAULT_CONFIG: Required<PlayerConfig> = {
   audioOnly: false,
   autopause: false,
   resume: false,
+  stallTimeout: 12,
 };
+
+/**
+ * Apple WebKit (Safari on macOS, every browser on iPhone/iPad) enforces a
+ * strict SourceBuffer memory quota. Past it, appends fail with
+ * QuotaExceededError and playback stalls, usually further into a video. The
+ * limits are the ones the 3Speak embed player has used on Apple devices since
+ * January 2026. They CLAMP whatever the app passes: an app tuned for desktop
+ * (60s / 60MB ahead) is exactly what trips the quota.
+ */
+const APPLE_BUFFER_CAPS = {
+  maxBufferLength: 20,
+  maxMaxBufferLength: 40,
+  maxBufferSize: 20 * 1000 * 1000,
+  // Drop played video behind the playhead instead of keeping it all.
+  backBufferLength: 10,
+} as const;
+
+export function applyAppleBufferCaps(
+  config: Record<string, unknown>,
+  isAppleWebKit: boolean,
+): Record<string, unknown> {
+  if (!isAppleWebKit) return config;
+  const out: Record<string, unknown> = { ...config };
+  for (const [key, cap] of Object.entries(APPLE_BUFFER_CAPS)) {
+    const v = out[key];
+    out[key] = typeof v === 'number' && Number.isFinite(v) ? Math.min(v, cap) : cap;
+  }
+  return out;
+}
 
 /**
  * 3Speak HLS Video Player.
  *
  * Framework-agnostic — works with any <video> element.
- * Handles HLS playback via native Safari HLS or hls.js (Chrome/Firefox/Edge).
+ * Handles HLS playback via hls.js wherever it runs (Chrome, Firefox, Edge,
+ * Safari, and iPhone through ManagedMediaSource), else native HLS.
  *
  * @example
  * ```js
@@ -47,6 +78,7 @@ export class Player {
   private hls: Hls | null = null;
   private listeners = new Map<string, Set<Function>>();
   private fallbackIndex = 0;
+  private _stallTimer: ReturnType<typeof setTimeout> | null = null;
   private fallbacks: string[] = [];
   private _ready = false;
   private _destroyed = false;
@@ -418,8 +450,8 @@ export class Player {
       // Prefer hls.js when MSE is available (Chrome, Firefox, Edge, modern Safari/iOS).
       // This avoids relying on UA detection which can be spoofed by browser
       // device-emulation tools (Firefox responsive-design-mode, Chrome DevTools).
-      this.log('Using hls.js');
-      const hls = new Hls({
+      this.log('Using hls.js', platform.supportsMSE ? '(MediaSource)' : '(ManagedMediaSource)');
+      const hls = new Hls(applyAppleBufferCaps({
         enableWorker: true,
         lowLatencyMode: false,
         maxBufferSize: 10 * 1000 * 1000,
@@ -427,7 +459,7 @@ export class Player {
         startLevel: 0,
         startFragPrefetch: true,
         ...this.config.hlsConfig,
-      });
+      }, platform.isAppleWebKit));
 
       hls.loadSource(hlsUrl);
       hls.attachMedia(this.video);
@@ -492,14 +524,60 @@ export class Player {
       this.log(`Trying fallback ${this.fallbackIndex}:`, fallbackUrl.substring(0, 80));
       this.emit('fallback', { url: fallbackUrl, index: this.fallbackIndex });
 
+      // Carry on from where the viewer was, not from the start: a stall
+      // switch usually happens mid-video.
+      const video = this.video;
+      const resumeAt = video && video.currentTime > 0 ? video.currentTime : 0;
+      const wasPlaying = !!video && !video.paused;
+      if (video && resumeAt > 0) {
+        const restore = () => {
+          video.removeEventListener('loadedmetadata', restore);
+          try { video.currentTime = resumeAt; } catch { /* not seekable yet */ }
+          if (wasPlaying) video.play().catch(() => { /* autoplay policy */ });
+        };
+        video.addEventListener('loadedmetadata', restore);
+      }
+
       if (hls) {
         hls.loadSource(fallbackUrl);
-      } else if (this.video) {
-        this.video.src = fallbackUrl;
+      } else if (video) {
+        video.src = fallbackUrl;
       }
       return true;
     }
     return false;
+  }
+
+  /**
+   * Playback hung: waiting, not paused, and the position is not moving. Common
+   * on a cold IPFS gateway, and on native HLS (older iPhones) nothing else
+   * recovers from it: there is no retry or timeout tuning there. Switch to the
+   * next fallback source and carry on from the same position.
+   */
+  private armStallWatchdog(): void {
+    const base = this.config.stallTimeout;
+    if (!base || !this.video || this._stallTimer) return;
+    // hls.js retries on its own, and a cold IPFS segment can take 30-45s to
+    // arrive the first time, so give it longer before abandoning a gateway.
+    // Native HLS has no retries at all: that is the case this exists for.
+    const seconds = this.hls ? Math.max(base, 30) : base;
+    const video = this.video;
+    const startedAt = video.currentTime;
+    this._stallTimer = setTimeout(() => {
+      this._stallTimer = null;
+      if (this.video !== video || video.paused || video.ended) return;
+      if (Math.abs(video.currentTime - startedAt) > 0.5) return; // it recovered
+      if (video.readyState >= 3) return; // has data for the next frames
+      this.log(`Stalled for ${seconds}s at ${startedAt.toFixed(1)}s, switching source`);
+      this.tryFallback(this.hls || undefined);
+    }, seconds * 1000);
+  }
+
+  private clearStallWatchdog(): void {
+    if (this._stallTimer) {
+      clearTimeout(this._stallTimer);
+      this._stallTimer = null;
+    }
   }
 
   private destroyHls(): void {
@@ -611,8 +689,15 @@ export class Player {
     on('pause', () => this.emit('pause'));
     on('ended', () => this.emit('ended'));
 
-    on('waiting', () => this.emit('loading', true as any));
+    on('waiting', () => {
+      this.emit('loading', true as any);
+      this.armStallWatchdog();
+    });
     on('canplay', () => { if (this._ready) this.emit('loading', false as any); });
+    on('playing', () => this.clearStallWatchdog());
+    on('pause', () => this.clearStallWatchdog());
+    on('seeking', () => this.clearStallWatchdog());
+    this.cleanupFns.push(() => this.clearStallWatchdog());
 
     on('progress', () => {
       if (video.buffered.length > 0 && video.duration > 0) {
